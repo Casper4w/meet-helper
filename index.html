@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR 會議音檔轉 JSON 服務 (終極偵錯版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .dot-loading { animation: bounce 1s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 flex items-center justify-center">
+    <div class="max-w-xl w-full bg-white rounded-3xl shadow-2xl p-8">
+        <div class="text-center mb-8">
+            <span class="text-4xl mb-4 block">🎤</span>
+            <h1 class="text-2xl font-black text-slate-800">音檔紀錄轉 JSON 服務</h1>
+        </div>
+        
+        <div class="mb-6">
+            <label class="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-widest">Step 1: 填入 API Key</label>
+            <input type="password" id="apiKey" placeholder="在此貼上您的 Gemini API Key" 
+                   class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all">
+        </div>
+
+        <div class="mb-8 p-6 bg-indigo-50 rounded-3xl border-2 border-indigo-100 text-center">
+            <label class="block text-xs font-bold text-indigo-500 mb-4 uppercase tracking-widest">Step 2: 選取錄音檔</label>
+            <input id="audioFile" type="file" accept="audio/*" class="block w-full text-sm text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer" />
+        </div>
+
+        <button onclick="processAudio()" id="runBtn" class="w-full bg-slate-800 text-white font-black py-5 rounded-2xl hover:bg-black shadow-lg transition-all disabled:bg-slate-300">
+            開始 AI 分析並產出 JSON
+        </button>
+
+        <div id="loader" class="hidden mt-8 text-center text-indigo-600 font-black">
+            <div class="dot-loading text-lg">AI 正在努力聽取中...</div>
+        </div>
+
+        <div id="resultArea" class="hidden mt-8">
+            <pre id="jsonOutput" class="bg-slate-900 text-emerald-400 p-6 rounded-2xl overflow-x-auto text-xs font-mono border-4 border-slate-800"></pre>
+        </div>
+    </div>
+
+    <script type="module">
+        // 改用更穩定的 SDK 載入方式
+        import { GoogleGenAI } from "https://esm.run/@google/generative-ai";
+
+        window.processAudio = async function() {
+            const keyInput = document.getElementById('apiKey');
+            const fileInput = document.getElementById('audioFile');
+            const runBtn = document.getElementById('runBtn');
+            const loader = document.getElementById('loader');
+            const resultArea = document.getElementById('resultArea');
+            const jsonOutput = document.getElementById('jsonOutput');
+
+            if (!keyInput.value) return alert("錯誤：請填入 API Key！");
+            if (!fileInput.files[0]) return alert("錯誤：請先選取檔案！");
+
+            runBtn.disabled = true;
+            loader.classList.remove('hidden');
+            resultArea.classList.add('hidden');
+
+            try {
+                const file = fileInput.files[0];
+                console.log("正在讀取檔案:", file.name, file.type);
+                
+                // 讀取檔案
+                const base64Data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = (e) => reject("檔案讀取失敗: " + e);
+                    reader.readAsDataURL(file);
+                });
+
+                const genAI = new GoogleGenAI(keyInput.value);
+                // 強制指定使用 1.5-flash，因為它對音檔支援最穩
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+                const prompt = "請聽這段錄音，並轉化為繁體中文 JSON 格式，包含會議主題(subject)與摘要(summary)。不要輸出任何解釋文字。";
+
+                const result = await model.generateContent([
+                    { inlineData: { mimeType: file.type || "audio/mp4", data: base64Data } },
+                    { text: prompt }
+                ]);
+
+                const text = await result.response.text();
+                jsonOutput.innerText = text.replace(/```json|```/g, "").trim();
+                resultArea.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("詳細錯誤訊息:", error);
+                // 彈出實際錯誤，讓我們知道是 API 沒過還是程式報錯
+                alert("❌ 分析失敗！\n可能原因：\n1. API Key 無效\n2. 檔案格式不支援\n3. 網路連結中斷\n\n具體訊息：" + error);
+            } finally {
+                runBtn.disabled = false;
+                loader.classList.add('hidden');
+            }
+        };
+    </script>
+</body>
+</html>
