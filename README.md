@@ -1,1 +1,1 @@
-# meet-helper
+# meeting-helper
